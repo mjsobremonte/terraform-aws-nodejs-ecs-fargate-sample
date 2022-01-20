@@ -29,6 +29,9 @@ Run an instance of the webapp image accessible on any local preferred/open port.
 `$ docker run -p 80:8080 -d <tagname>`
 
 # Provisioning on AWS
+NOTE:  
+For the purposes of this sample project, the webapp image is conveniently pushed up to ECR. In actual working environments this is most likely better off being decoupled as part of the CI/CD stages.
+
 In tf workfolder:  
 `$ cd tf`
 
