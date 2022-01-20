@@ -14,10 +14,30 @@ variable "prefix" {
   default     = "terraform-sample"
 }
 
-variable "ingress_from_port" {
-  default     = 80
+variable "ecs_environment" {
+  default = "test"
 }
 
-variable "ingress_to_port" {
-  default     = 80
+variable "ecs_container_port" {
+  default = "8080"
+}
+
+variable "ecs_host_port" {
+  default = "8080"
+}
+
+variable "ecs_ingress_from_port" {
+  default = 8080
+}
+
+variable "ecs_ingress_to_port" {
+  default = 8080
+}
+
+variable "lb_ingress_from_port" {
+  default = 80
+}
+
+variable "lb_ingress_to_port" {
+  default = 80
 }

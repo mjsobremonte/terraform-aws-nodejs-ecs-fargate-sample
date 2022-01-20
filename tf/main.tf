@@ -1,4 +1,6 @@
+##
 ## Create ECR Repository
+##
 resource "aws_ecr_repository" "repository" {
   name = "${var.prefix}-webapp"
 }
@@ -13,13 +15,73 @@ resource "docker_registry_image" "registry_image" {
   }
 }
 
+##
+## Setup LB
+##
+resource "aws_security_group" "lb" {
+  name        = "${var.prefix}-lb-sg"
+  description = "Controls access to the Application Load Balancer (ALB)"
+
+  ingress {
+    protocol    = "tcp"
+    from_port   = var.lb_ingress_from_port
+    to_port     = var.lb_ingress_to_port
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    protocol    = "-1"
+    from_port   = 0
+    to_port     = 0
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+resource "aws_lb" "alb" {
+  name               = "${var.prefix}-alb"
+  subnets            = data.aws_subnet_ids.default.ids
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.lb.id]
+
+  tags = {
+    Environment = var.ecs_environment
+    Application = "${var.prefix}-webapp"
+  }
+}
+
+resource "aws_lb_target_group" "target_group" {
+  name        = "${var.prefix}-alb-tg"
+  port        = 80
+  protocol    = "HTTP"
+  vpc_id      = data.aws_vpc.default.id
+  target_type = "ip"
+
+  health_check {
+    matcher = "200-299"
+    path    = "/"
+  }
+}
+
+resource "aws_lb_listener" "listener_ffwd" {
+  load_balancer_arn = aws_lb.alb.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.target_group.arn
+  }
+}
+
+##
 ## Setup ECS cluster, tasks, permissions and services
+##
 resource "aws_ecs_cluster" "cluster" {
   name = "${var.prefix}-webapp"
 }
 
 resource "aws_iam_role" "ecs_task_execution_role" {
-  name               = "ecsTaskExecutionRole"
+  name               = "${var.prefix}-ecs-task-execution-role"
   assume_role_policy = data.aws_iam_policy_document.assume_role_policy.json
 }
 
@@ -38,8 +100,8 @@ resource "aws_ecs_task_definition" "ecs_taskdef" {
       "essential": true,
       "portMappings": [
         {
-          "containerPort": 8080,
-          "hostPort": 8080
+          "containerPort": ${var.ecs_container_port},
+          "hostPort": ${var.ecs_host_port}
         }
       ],
       "memory": 512,
@@ -59,11 +121,10 @@ resource "aws_security_group" "ecs_tasks" {
   description = "ECS Security Group"
 
   ingress {
-    protocol    = "tcp"
-    from_port   = var.ingress_from_port
-    to_port     = var.ingress_to_port
-    cidr_blocks = ["0.0.0.0/0"]
-    # TODO   security_groups = [aws_security_group.lb.id] # setup lb
+    protocol        = "tcp"
+    from_port       = var.ecs_ingress_from_port
+    to_port         = var.ecs_ingress_to_port
+    security_groups = [aws_security_group.lb.id]
   }
 
   egress {
@@ -84,12 +145,19 @@ resource "aws_ecs_service" "webapp" {
   network_configuration {
     security_groups = [aws_security_group.ecs_tasks.id]
     subnets         = data.aws_subnet_ids.default.ids
+    assign_public_ip = true
   }
 
-  depends_on = [aws_iam_role_policy_attachment.ecs_task_execution_policy]
+  load_balancer {
+    target_group_arn = aws_lb_target_group.target_group.arn
+    container_name   = "${var.prefix}-webapp"
+    container_port   = var.ecs_container_port
+  }
+
+  depends_on = [aws_lb_listener.listener_ffwd ,aws_iam_role_policy_attachment.ecs_task_execution_policy]
 
   tags = {
-    Environment = "test"
+    Environment = var.ecs_environment
     Application = "${var.prefix}-webapp"
   }
 }
